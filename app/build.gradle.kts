@@ -13,15 +13,34 @@ android {
         applicationId = "com.decmike.gestion"
         minSdk = 28
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        // Numéro de build GitHub Actions : chaque version s'installe par-dessus la précédente.
+        val run = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = run
+        versionName = "1.0.$run"
+    }
+
+    // Clé de signature fixe, fournie hors du dépôt :
+    //  - GitHub Actions : secret SIGNING_KEY (décodé par le workflow) ;
+    //  - en local : gestionKeystore=/chemin/gestion-release.jks et gestionSigningPassword=… dans ~/.gradle/gradle.properties.
+    val keystorePath = System.getenv("SIGNING_KEYSTORE") ?: (project.findProperty("gestionKeystore") as String?)
+    val signingPassword = System.getenv("SIGNING_PASSWORD") ?: (project.findProperty("gestionSigningPassword") as String?)
+    val fixedKey = !keystorePath.isNullOrBlank() && !signingPassword.isNullOrBlank() && file(keystorePath).exists()
+    signingConfigs {
+        if (fixedKey) create("fixed") {
+            storeFile = file(keystorePath!!)
+            storePassword = signingPassword
+            keyAlias = "gestion"
+            keyPassword = signingPassword
+        }
     }
 
     buildTypes {
+        debug {
+            if (fixedKey) signingConfig = signingConfigs.getByName("fixed")
+        }
         release {
             isMinifyEnabled = false
-            // Signé avec la clé debug pour pouvoir installer l'APK directement.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (fixedKey) signingConfigs.getByName("fixed") else signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

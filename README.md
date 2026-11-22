@@ -63,3 +63,14 @@ app/src/main/java/com/decmike/gestion/
 ├── schedule/   programmation des playlists (AlarmManager)
 └── ui/         écrans Compose
 ```
+
+## Signature (mises à jour sans désinstaller)
+
+Les APK sont signés avec une clé fixe gardée **hors du dépôt**. Elle est fournie à GitHub Actions par un secret :
+**Settings → Secrets and variables → Actions → New repository secret**, nom `SIGNING_KEY`, valeur = contenu du fichier `SIGNING_KEY.txt` (format `motdepasse:keystore-en-base64`).
+Sans ce secret, la compilation fonctionne mais avec une clé temporaire.
+
+Empreinte SHA-256 attendue du certificat :
+`41:84:F9:2F:83:63:29:8F:6A:0B:BA:49:54:9A:3E:09:F9:41:B4:6F:CE:F2:4A:7E:57:23:98:A0:B4:CC:CC:DE`
+
+⚠️ Conservez une copie de la clé : si elle est perdue, les futures versions ne pourront plus s'installer par-dessus.

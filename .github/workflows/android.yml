@@ -16,10 +16,29 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+      - name: Préparer la clé de signature
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: |
+          if [ -z "$SIGNING_KEY" ]; then
+            echo "::warning::Secret SIGNING_KEY absent : APK signé avec une clé temporaire (désinstallation nécessaire à chaque mise à jour)."
+            exit 0
+          fi
+          PW="${SIGNING_KEY%%:*}"
+          echo "::add-mask::$PW"
+          echo "${SIGNING_KEY#*:}" | base64 -d > "$RUNNER_TEMP/gestion-release.jks"
+          echo "SIGNING_KEYSTORE=$RUNNER_TEMP/gestion-release.jks" >> "$GITHUB_ENV"
+          echo "SIGNING_PASSWORD=$PW" >> "$GITHUB_ENV"
       - name: Compiler l'APK
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug assembleRelease
+      - name: Empreinte du certificat
+        run: |
+          APKSIGNER=$(ls $ANDROID_HOME/build-tools/*/apksigner | sort -V | tail -1)
+          $APKSIGNER verify --print-certs app/build/outputs/apk/release/*.apk | grep -i "SHA-256"
+          echo "Empreinte attendue : 41:84:F9:2F:83:63:29:8F:6A:0B:BA:49:54:9A:3E:09:F9:41:B4:6F:CE:F2:4A:7E:57:23:98:A0:B4:CC:CC:DE"
+          rm -f "$RUNNER_TEMP/gestion-release.jks"
       - uses: actions/upload-artifact@v4
         with:
           name: gestion-apk
