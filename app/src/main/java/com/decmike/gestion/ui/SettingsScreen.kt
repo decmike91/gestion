@@ -134,10 +134,14 @@ fun SettingsScreen(app: GestionApp, permissionTick: Int) {
             Button(onClick = { app.files.rescanAsync() }, modifier = Modifier.fillMaxWidth()) { Text("Analyser maintenant (${files.size} fichiers connus)") }
 
             SectionTitle("Autorisations")
-            val storageOk = remember(permissionTick) { hasStorageAccess() }
+            val storageOk = remember(permissionTick) { hasStorageAccess(context) }
             PermissionRow("Accès à tous les fichiers", storageOk) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) context.startActivity(
-                    Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:" + context.packageName))
+                context.startActivity(
+                    Intent(
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION
+                        else Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:" + context.packageName)
+                    )
                 )
             }
             PermissionRow("Alarmes précises (programmation)", remember(permissionTick) { ScheduleManager.canExact(context) }) {

@@ -11,6 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class GestionApp : Application() {
@@ -31,6 +32,8 @@ class GestionApp : Application() {
 
         // La bibliothèque musicale suit les fichiers analysés.
         scope.launch {
+            // Attendre le cache : sinon la liste vide initiale effacerait la bibliothèque musicale.
+            files.loaded.first { it }
             files.files.collectLatest { audio.refreshLibrary(it) }
         }
         ScheduleManager.rescheduleAll(this)

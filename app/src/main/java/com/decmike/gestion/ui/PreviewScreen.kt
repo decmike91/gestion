@@ -196,21 +196,30 @@ private fun PdfPreview(item: FileItem) {
             error = "PDF illisible ou protégé"; null
         }
     }
-    DisposableEffect(renderer) { onDispose { try { renderer?.close() } catch (_: Exception) {} } }
+    DisposableEffect(renderer) { onDispose { renderer?.let { r -> synchronized(r) { try { r.close() } catch (_: Exception) {} } } } }
     LaunchedEffect(renderer, page) {
         val r = renderer ?: return@LaunchedEffect
-        pageCount = r.pageCount
+        error = null
+        pageCount = try { r.pageCount } catch (_: Exception) { 0 }
         bitmap = withContext(Dispatchers.IO) {
-            synchronized(r) {
+            // Page corrompue ou rendu interrompu par la fermeture : pas de plantage.
+            try { synchronized(r) {
                 r.openPage(page).use { p ->
-                    val scale = 2
-                    val bmp = Bitmap.createBitmap(p.width * scale, p.height * scale, Bitmap.Config.ARGB_8888)
+                    // Largeur cible ~1600 px, sans dépasser ~24 Mpx (affiches, plans…).
+                    val scale = (1600f / p.width).coerceIn(0.1f, 3f)
+                        .coerceAtMost(kotlin.math.sqrt(24_000_000f / (p.width.toFloat() * p.height)))
+                    val w = (p.width * scale).toInt().coerceAtLeast(1)
+                    val h = (p.height * scale).toInt().coerceAtLeast(1)
+                    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
                     bmp.eraseColor(AColor.WHITE)
                     p.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                     bmp
                 }
+            } } catch (e: Exception) {
+                null
             }
         }
+        if (bitmap == null) error = "Impossible d'afficher la page ${page + 1}"
     }
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant)) {

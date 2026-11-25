@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -68,8 +69,28 @@ class FileRepository(
     private val scanner = FileScanner(context)
     private val mutex = Mutex()
 
-    private val _files = MutableStateFlow(store.load<List<FileItem>>("files.json", emptyList()))
+    private val _files = MutableStateFlow<List<FileItem>>(emptyList())
     val files: StateFlow<List<FileItem>> = _files.asStateFlow()
+
+    /** Vrai une fois le cache disque chargé (lecture faite hors du thread principal). */
+    private val _loaded = MutableStateFlow(false)
+    val loaded: StateFlow<Boolean> = _loaded.asStateFlow()
+
+    init {
+        scope.launch(Dispatchers.IO) {
+            val cached = store.load<List<FileItem>>("files.json", emptyList())
+            if (_files.value.isEmpty()) _files.value = cached
+            _loaded.value = true
+        }
+    }
+
+    /** Lance une analyse seulement si aucun fichier n'est connu. */
+    fun rescanIfEmpty() {
+        scope.launch {
+            loaded.first { it }
+            if (_files.value.isEmpty()) rescan()
+        }
+    }
 
     private val _scanning = MutableStateFlow(false)
     val scanning: StateFlow<Boolean> = _scanning.asStateFlow()
@@ -106,6 +127,7 @@ class FileRepository(
                 }
             }
             _files.value = all
+            _loaded.value = true
             _progress.value = all.size
             store.save("files.json", all.toList())
         } finally {
@@ -145,11 +167,15 @@ class FileRepository(
         var n = 0
         for (u in uris) {
             try {
-                val name = DocumentFile.fromSingleUri(context, u)?.name ?: "import_${System.currentTimeMillis()}"
+                // Un fournisseur pourrait renvoyer un nom contenant « / » ou « .. » : on le neutralise.
+                val name = (DocumentFile.fromSingleUri(context, u)?.name ?: "import_${System.currentTimeMillis()}")
+                    .replace(Regex("[/\\\\:*?\"<>|\\x00]"), "_").trim('.', ' ').ifEmpty { "import_${System.currentTimeMillis()}" }
                 var target = File(dest, name)
                 var i = 1
                 while (target.exists()) {
-                    target = File(dest, "${name.substringBeforeLast('.')} ($i).${name.substringAfterLast('.', "bin")}")
+                    val ext = name.substringAfterLast('.', "")
+                    val base = if (ext.isEmpty()) name else name.substringBeforeLast('.')
+                    target = File(dest, if (ext.isEmpty()) "$base ($i)" else "$base ($i).$ext")
                     i++
                 }
                 context.contentResolver.openInputStream(u)?.use { input ->

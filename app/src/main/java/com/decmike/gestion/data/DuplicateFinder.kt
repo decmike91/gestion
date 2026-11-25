@@ -63,7 +63,7 @@ object DuplicateFinder {
 
     private val noise = listOf(
         Regex("""\s*\(\d+\)$"""), Regex("""\s*\[\d+\]$"""), Regex("""[\s_-]*(copy|copie|copia|kopie)(\s*\d+)?$"""),
-        Regex("""[\s_-]+\d{1,2}$"""), Regex("""^(copy of|copie de)\s+"""),
+        Regex("""^(copy of|copie de)\s+"""),
     )
 
     fun normalizeName(name: String): String {

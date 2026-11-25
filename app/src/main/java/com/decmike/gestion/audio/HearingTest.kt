@@ -9,6 +9,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.PI
@@ -83,7 +84,7 @@ class HearingTest(private val scope: CoroutineScope) {
                     var level = HearingTestState.START_DB
                     heard = false
                     var result: Int? = null
-                    while (scope.isActive && job?.isActive == true && level <= HearingTestState.MAX_DB) {
+                    while (currentCoroutineContext().isActive && level <= HearingTestState.MAX_DB) {
                         _state.value = _state.value.copy(ear = ear, freqIndex = fi, levelDb = level, step = step)
                         // 3 bips de 250 ms par palier
                         repeat(3) {
@@ -96,7 +97,7 @@ class HearingTest(private val scope: CoroutineScope) {
                         if (heard) { result = level; break }
                         level += 5
                     }
-                    if (job?.isActive != true) return
+                    if (!currentCoroutineContext().isActive) return
                     val r = result ?: (HearingTestState.MAX_DB + 5)
                     _state.value = _state.value.let { s ->
                         if (ear == Ear.RIGHT) s.copy(rawRight = s.rawRight.toMutableList().also { it[fi] = r })
