@@ -42,15 +42,25 @@ class PlayerConnection(private val context: Context) {
     }
 
     fun connect(onReady: ((MediaController) -> Unit)? = null) {
-        controller?.let { c -> onReady?.invoke(c); return }
+        controller?.takeIf { it.isConnected }?.let { c -> onReady?.invoke(c); return }
+        controller?.let { it.removeListener(listener); it.release() }
+        controller = null
         onReady?.let { pending += it }
         if (connecting) return
         connecting = true
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
-        val future = MediaController.Builder(context, token).buildAsync()
+        val future = MediaController.Builder(context, token)
+            .setListener(object : MediaController.Listener {
+                override fun onDisconnected(controller: MediaController) {
+                    if (this@PlayerConnection.controller === controller) this@PlayerConnection.controller = null
+                    _ui.value = PlayerUi()
+                }
+            })
+            .buildAsync()
         future.addListener({
             connecting = false
-            val c = try { future.get() } catch (e: Exception) { null } ?: return@addListener
+            val c = try { future.get() } catch (e: Exception) { null }
+            if (c == null) { pending.clear(); return@addListener }
             controller = c
             c.addListener(listener)
             refresh()

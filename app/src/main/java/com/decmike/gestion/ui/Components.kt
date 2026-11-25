@@ -45,8 +45,6 @@ import com.decmike.gestion.data.FileItem
 import com.decmike.gestion.ui.theme.LeftEarColor
 import com.decmike.gestion.ui.theme.RightEarColor
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 
 fun formatSize(bytes: Long): String {
@@ -58,10 +56,12 @@ fun formatSize(bytes: Long): String {
     return String.format(Locale.FRANCE, if (v < 10) "%.1f %s" else "%.0f %s", v, units[i])
 }
 
-private val dateFmt = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE)
-private val monthFmt = SimpleDateFormat("MMMM yyyy", Locale.FRANCE)
-fun formatDate(ms: Long): String = if (ms <= 0) "—" else dateFmt.format(Date(ms))
-fun formatMonth(ms: Long): String = if (ms <= 0) "Date inconnue" else monthFmt.format(Date(ms)).replaceFirstChar { it.uppercase() }
+// DateTimeFormatter est sûr entre threads (le regroupement par mois tourne en arrière-plan).
+private val dateFmt = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm", Locale.FRANCE)
+private val monthFmt = java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", Locale.FRANCE)
+private fun local(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault())
+fun formatDate(ms: Long): String = if (ms <= 0) "—" else dateFmt.format(local(ms))
+fun formatMonth(ms: Long): String = if (ms <= 0) "Date inconnue" else monthFmt.format(local(ms)).replaceFirstChar { it.uppercase() }
 fun formatDuration(ms: Long): String {
     val s = ms / 1000
     return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, (s / 60) % 60, s % 60) else "%d:%02d".format(s / 60, s % 60)

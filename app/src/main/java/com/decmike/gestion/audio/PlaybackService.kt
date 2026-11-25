@@ -64,6 +64,11 @@ class PlaybackService : MediaSessionService() {
                     controller: MediaSession.ControllerInfo,
                     mediaItems: MutableList<MediaItem>,
                 ): ListenableFuture<MutableList<MediaItem>> {
+                    // Seule cette application peut ajouter des morceaux ; les contrôleurs système
+                    // (notification, Bluetooth, montre…) gardent lecture/pause/suivant.
+                    if (controller.packageName != packageName) {
+                        return Futures.immediateFailedFuture(UnsupportedOperationException())
+                    }
                     val resolved = mediaItems.map { item ->
                         val uri = item.requestMetadata.mediaUri ?: Uri.parse(item.mediaId)
                         item.buildUpon().setUri(uri).build()

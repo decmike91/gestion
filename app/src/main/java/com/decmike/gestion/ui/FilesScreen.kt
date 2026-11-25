@@ -74,8 +74,10 @@ import com.decmike.gestion.data.SizeFilter
 import com.decmike.gestion.data.SortField
 import kotlinx.coroutines.launch
 
-fun hasStorageAccess(): Boolean =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Environment.isExternalStorageManager() else true
+fun hasStorageAccess(context: android.content.Context): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Environment.isExternalStorageManager()
+    else context.checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) ==
+        android.content.pm.PackageManager.PERMISSION_GRANTED
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -84,32 +86,33 @@ fun FilesScreen(app: GestionApp, onOpen: (FileItem) -> Unit, permissionTick: Int
     val scope = rememberCoroutineScope()
     val files by app.files.files.collectAsStateWithLifecycle()
     val scanning by app.files.scanning.collectAsStateWithLifecycle()
+    val loaded by app.files.loaded.collectAsStateWithLifecycle()
     val progress by app.files.progress.collectAsStateWithLifecycle()
     val error by app.files.lastError.collectAsStateWithLifecycle()
     val query by UiState.fileQuery.collectAsStateWithLifecycle()
     val audioState by app.audio.state.collectAsStateWithLifecycle()
 
-    val result = remember(files, query) { query.apply(files) }
+    // Filtrage, tri et regroupement hors du thread principal (des dizaines de milliers de fichiers).
+    var result by remember { mutableStateOf(emptyList<FileItem>()) }
+    var grouped by remember { mutableStateOf(emptyList<Pair<String, List<FileItem>>>()) }
+    androidx.compose.runtime.LaunchedEffect(files, query) {
+        val (r, g) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val r = query.apply(files)
+            r to groupFiles(r, query.group)
+        }
+        result = r
+        grouped = g
+    }
     val totalSize = remember(result) { result.sumOf { it.size } }
     val counts = remember(files) { files.groupingBy { it.category }.eachCount() }
     val sources = remember(files) { files.map { it.source }.distinct().sorted() }
-    val grouped = remember(result, query.group) {
-        when (query.group) {
-            GroupBy.NONE -> listOf("" to result)
-            GroupBy.CATEGORY -> result.groupBy { it.category.label }.toList()
-            GroupBy.FOLDER -> result.groupBy { it.folder }.toList().sortedBy { it.first.lowercase() }
-            GroupBy.MONTH -> result.groupBy { formatMonth(it.modified) }.toList()
-            GroupBy.SOURCE -> result.groupBy { it.source }.toList()
-            GroupBy.EXTENSION -> result.groupBy { it.extension.uppercase().ifEmpty { "SANS EXTENSION" } }.toList().sortedBy { it.first }
-        }
-    }
 
     var menuFor by remember { mutableStateOf<FileItem?>(null) }
     var confirmDelete by remember { mutableStateOf<FileItem?>(null) }
     var addToPlaylist by remember { mutableStateOf<FileItem?>(null) }
     var showSort by remember { mutableStateOf(false) }
     var showGroup by remember { mutableStateOf(false) }
-    val access = remember(permissionTick) { hasStorageAccess() }
+    val access = remember(permissionTick) { hasStorageAccess(context) }
 
     fun update(t: (com.decmike.gestion.data.FileQuery) -> com.decmike.gestion.data.FileQuery) {
         UiState.fileQuery.value = t(UiState.fileQuery.value)
@@ -170,6 +173,8 @@ fun FilesScreen(app: GestionApp, onOpen: (FileItem) -> Unit, permissionTick: Int
                                 try { context.startActivity(i) } catch (_: Exception) {
                                     context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
                                 }
+                            } else {
+                                context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + context.packageName)))
                             }
                         }) { Text("Autoriser") }
                     }
@@ -225,7 +230,7 @@ fun FilesScreen(app: GestionApp, onOpen: (FileItem) -> Unit, permissionTick: Int
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium) }
                 }
             }
-            if (files.isEmpty() && !scanning) item {
+            if (files.isEmpty() && !scanning && loaded) item {
                 Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Filled.FolderOpen, null, Modifier.size(64.dp))
                     Text("Aucun fichier analysé pour l'instant.")
@@ -280,6 +285,15 @@ fun FilesScreen(app: GestionApp, onOpen: (FileItem) -> Unit, permissionTick: Int
             app.audio.addToPlaylist(id, listOf(f.uri)); addToPlaylist = null
         }
     }
+}
+
+private fun groupFiles(result: List<FileItem>, group: GroupBy): List<Pair<String, List<FileItem>>> = when (group) {
+    GroupBy.NONE -> listOf("" to result)
+    GroupBy.CATEGORY -> result.groupBy { it.category.label }.toList()
+    GroupBy.FOLDER -> result.groupBy { it.folder }.toList().sortedBy { it.first.lowercase() }
+    GroupBy.MONTH -> result.groupBy { formatMonth(it.modified) }.toList()
+    GroupBy.SOURCE -> result.groupBy { it.source }.toList()
+    GroupBy.EXTENSION -> result.groupBy { it.extension.uppercase().ifEmpty { "SANS EXTENSION" } }.toList().sortedBy { it.first }
 }
 
 @Composable

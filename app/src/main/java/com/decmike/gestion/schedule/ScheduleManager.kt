@@ -87,6 +87,7 @@ object ScheduleManager {
             )
         }
         s.volume?.let { app.audio.setVolumePercent(it) }
+        app.audio.flush()
         app.audio.sleepAt.value = s.stopAfterMinutes?.let { System.currentTimeMillis() + it * 60_000L }
 
         val tracks = app.audio.tracksOf(playlist).let { if (s.shuffle) it.shuffled() else it }

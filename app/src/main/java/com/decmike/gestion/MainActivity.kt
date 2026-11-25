@@ -67,9 +67,9 @@ class MainActivity : ComponentActivity() {
     private var permissionTick by mutableIntStateOf(0)
     private var hadAccess = false
 
-    private val runtimePerms = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+    private val runtimePerms = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         permissionTick++
-        app.files.rescanAsync()
+        if (result.values.any { it }) app.files.rescanAsync()
     }
 
     private val app get() = application as GestionApp
@@ -77,19 +77,24 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        requestRuntimePermissions()
-        hadAccess = hasStorageAccess()
-        if (hadAccess && app.files.files.value.isEmpty()) app.files.rescanAsync()
+        if (savedInstanceState == null) requestRuntimePermissions()
+        hadAccess = hasStorageAccess(this)
+        if (hadAccess) app.files.rescanIfEmpty()
         setContent {
             GestionTheme { Root(app, permissionTick) }
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        app.audio.flush()
     }
 
     override fun onResume() {
         super.onResume()
         permissionTick++
         // L'utilisateur revient des réglages après avoir accordé l'accès aux fichiers.
-        val now = hasStorageAccess()
+        val now = hasStorageAccess(this)
         if (now && !hadAccess) app.files.rescanAsync()
         hadAccess = now
         app.player.connect()
@@ -107,7 +112,8 @@ class MainActivity : ComponentActivity() {
             if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) perms += Manifest.permission.WRITE_EXTERNAL_STORAGE
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) perms += Manifest.permission.BLUETOOTH_CONNECT
-        runtimePerms.launch(perms.toTypedArray())
+        val missing = perms.filter { checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED }
+        if (missing.isNotEmpty()) runtimePerms.launch(missing.toTypedArray())
     }
 }
 

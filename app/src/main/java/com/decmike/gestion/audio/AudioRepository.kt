@@ -14,6 +14,9 @@ import com.decmike.gestion.data.FileItem
 import com.decmike.gestion.data.JsonStore
 import com.decmike.gestion.data.SourceType
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -48,10 +51,23 @@ class AudioRepository(
 
     val ambiances: List<Ambiance> get() = AudioState.BUILT_IN_AMBIANCES + _state.value.customAmbiances
 
+    private var saveJob: Job? = null
+
     fun update(transform: (AudioState) -> AudioState) {
-        val s = transform(_state.value)
-        _state.value = s
-        scope.launch(Dispatchers.IO) { store.save("audio.json", s) }
+        _state.update(transform)
+        // Les curseurs déclenchent des dizaines de mises à jour par seconde : on regroupe,
+        // et on écrit toujours l'état le plus récent (jamais une version plus ancienne).
+        saveJob?.cancel()
+        saveJob = scope.launch(Dispatchers.IO) {
+            delay(400)
+            store.save("audio.json", _state.value)
+        }
+    }
+
+    /** Écrit immédiatement (avant une alarme ou l'arrêt du processus). */
+    fun flush() {
+        saveJob?.cancel()
+        store.save("audio.json", _state.value)
     }
 
     // ---------- Résolution du profil actif ----------
@@ -115,7 +131,7 @@ class AudioRepository(
         val result = audio.map { f ->
             previous[f.uri]?.takeIf { it.modified == f.modified }
                 ?: f.path?.let { p -> index[p] }?.copy(uri = f.uri, fileName = f.name, folder = f.folder, modified = f.modified)
-                ?: retrieve(f)
+                ?: if (f.sourceType == SourceType.LOCAL) retrieve(f) else fromName(f)
         }
         _tracks.value = result
         store.save("tracks.json", result)
@@ -175,6 +191,10 @@ class AudioRepository(
             try { r.release() } catch (_: Exception) {}
         }
     }
+
+    /** Fichier d'un drive : on ne lit pas son contenu (cela le téléchargerait). */
+    private fun fromName(f: FileItem) =
+        Track(f.uri, titleFromName(f.name), cleanArtist(null, f.name), f.folder.substringAfterLast('/'), 0, f.name, f.folder, f.modified)
 
     private fun titleFromName(name: String): String {
         val base = name.substringBeforeLast('.')

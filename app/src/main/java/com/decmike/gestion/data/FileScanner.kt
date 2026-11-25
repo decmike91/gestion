@@ -74,7 +74,7 @@ class FileScanner(private val context: Context) {
             visitedDirs++
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
             try {
-                context.contentResolver.query(children, projection, null, null, null)?.use { c ->
+                queryChildren(children, projection)?.use { c ->
                     while (c.moveToNext()) {
                         val id = c.getString(0) ?: continue
                         val name = c.getString(1) ?: continue
@@ -105,6 +105,22 @@ class FileScanner(private val context: Context) {
             }
         }
         return out
+    }
+
+    /**
+     * Les drives cloud (OneDrive, Dropbox…) répondent d'abord avec une liste partielle
+     * marquée EXTRA_LOADING, puis la complètent : on réinterroge jusqu'à obtenir la liste complète.
+     */
+    private fun queryChildren(uri: Uri, projection: Array<String>): android.database.Cursor? {
+        var attempt = 0
+        while (true) {
+            val c = context.contentResolver.query(uri, projection, null, null, null) ?: return null
+            val loading = c.extras?.getBoolean(DocumentsContract.EXTRA_LOADING, false) == true
+            if (!loading || attempt >= 20) return c
+            c.close()
+            attempt++
+            Thread.sleep(500)
+        }
     }
 
     companion object {
